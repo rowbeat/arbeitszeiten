@@ -13,31 +13,62 @@ body {
 input {
     padding: 10px;
     font-size: 18px;
-    width: 160px;
+    width: 200px;
 }
 button {
     padding: 12px;
     font-size: 18px;
     margin-top: 10px;
+    width: 220px;
 }
 </style>
 
 <script>
-// -------------------------------
+// --------------------------------------------------
 // KONFIGURATION (DEINE WERTE)
-// -------------------------------
+// --------------------------------------------------
 const CLIENT_ID = "3b4ebf1f-8107-477c-9368-fb76ba2169c7";
 const TENANT_ID = "e19f9f5c-569f-487f-8ca5-5fc648224536";
 const FILE_ID = "c/6132f13d2296c3cc/IQAHuJPsDiFrQZFsMI0nKw2SAasC5KlZt7DfdNQ2FZlC_rY";
 
-// Tabellenblatt + Zellen (Beispiel)
-const SHEET = "Quartal 2";
-const CELL_START = "D20";
-const CELL_END = "G20";
+// Startzeilen pro Monat (bitte anpassen falls nötig)
+const monthStartRow = {
+    1: 14, 2: 45, 3: 73,
+    4: 14, 5: 45, 6: 73,
+    7: 14, 8: 45, 9: 73,
+    10: 14, 11: 45, 12: 73
+};
 
-// -------------------------------
+// --------------------------------------------------
+// QUARTAL ERMITTELN
+// --------------------------------------------------
+function getQuarter(month) {
+    if (month <= 3) return "Quartal 1";
+    if (month <= 6) return "Quartal 2";
+    if (month <= 9) return "Quartal 3";
+    return "Quartal 4";
+}
+
+// --------------------------------------------------
+// AUTOMATISCHE ZELLENLOGIK
+// --------------------------------------------------
+function getExcelCell(date, type) {
+    const d = new Date(date);
+    const day = d.getDate();
+    const month = d.getMonth() + 1;
+
+    const quarter = getQuarter(month);
+    const startRow = monthStartRow[month];
+    const row = startRow + (day - 1);
+
+    const col = type === "start" ? "D" : "G";
+
+    return { quarter, cell: `${col}${row}` };
+}
+
+// --------------------------------------------------
 // LOGIN FLOW
-// -------------------------------
+// --------------------------------------------------
 async function login() {
     const redirectUri = window.location.href;
 
@@ -61,11 +92,14 @@ async function exchangeCodeForToken(code) {
         `&code=${code}` +
         `&redirect_uri=${encodeURIComponent(redirectUri)}`;
 
-    const response = await fetch(`https://login.microsoftonline.com/${TENANT_ID}/oauth2/v2.0/token`, {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body
-    });
+    const response = await fetch(
+        `https://login.microsoftonline.com/${TENANT_ID}/oauth2/v2.0/token`,
+        {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body
+        }
+    );
 
     const data = await response.json();
     localStorage.setItem("refresh_token", data.refresh_token);
@@ -84,49 +118,59 @@ async function getAccessToken() {
         `&grant_type=refresh_token` +
         `&refresh_token=${refresh}`;
 
-    const response = await fetch(`https://login.microsoftonline.com/${TENANT_ID}/oauth2/v2.0/token`, {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body
-    });
+    const response = await fetch(
+        `https://login.microsoftonline.com/${TENANT_ID}/oauth2/v2.0/token`,
+        {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body
+        }
+    );
 
     const data = await response.json();
     return data.access_token;
 }
 
-// -------------------------------
+// --------------------------------------------------
 // IN EXCEL SCHREIBEN
-// -------------------------------
-async function writeToExcel(start, end) {
+// --------------------------------------------------
+async function writeToExcel(date, start, end) {
     const token = await getAccessToken();
     if (!token) return;
 
-    const url =
-        `https://graph.microsoft.com/v1.0/me/drive/items/${FILE_ID}/workbook/worksheets('${SHEET}')/range(address='${CELL_START}:${CELL_END}')`;
+    const startCell = getExcelCell(date, "start");
+    const endCell = getExcelCell(date, "end");
 
-    const body = {
-        values: [[start, end]]
-    };
+    const urlStart =
+        `https://graph.microsoft.com/v1.0/me/drive/items/${FILE_ID}/workbook/worksheets('${startCell.quarter}')/range(address='${startCell.cell}')`;
 
-    const response = await fetch(url, {
+    const urlEnd =
+        `https://graph.microsoft.com/v1.0/me/drive/items/${FILE_ID}/workbook/worksheets('${endCell.quarter}')/range(address='${endCell.cell}')`;
+
+    await fetch(urlStart, {
         method: "PATCH",
         headers: {
             "Authorization": `Bearer ${token}`,
             "Content-Type": "application/json"
         },
-        body: JSON.stringify(body)
+        body: JSON.stringify({ values: [[start]] })
     });
 
-    if (response.ok) {
-        alert("Zeiten erfolgreich gespeichert!");
-    } else {
-        alert("Fehler beim Schreiben in Excel.");
-    }
+    await fetch(urlEnd, {
+        method: "PATCH",
+        headers: {
+            "Authorization": `Bearer ${token}`,
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ values: [[end]] })
+    });
+
+    alert("Zeiten erfolgreich gespeichert!");
 }
 
-// -------------------------------
+// --------------------------------------------------
 // URL CODE HANDLING
-// -------------------------------
+// --------------------------------------------------
 window.onload = () => {
     const params = new URLSearchParams(window.location.search);
     if (params.has("code")) {
@@ -143,12 +187,16 @@ window.onload = () => {
 <button onclick="login()">Einmalig einloggen (nur Robert)</button>
 
 <h3>Zeiten eintragen</h3>
+
+Datum: <input id="date" type="date"><br><br>
 Start: <input id="start" type="time"><br><br>
 Ende: <input id="end" type="time"><br><br>
 
-<button onclick="writeToExcel(document.getElementById('start').value, document.getElementById('end').value)">
-Speichern
-</button>
+<button onclick="writeToExcel(
+    document.getElementById('date').value,
+    document.getElementById('start').value,
+    document.getElementById('end').value
+)">Speichern</button>
 
 </body>
 </html>
