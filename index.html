@@ -1,176 +1,163 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
-<meta charset="UTF-8">
-<title>Katharina Arbeitszeiten</title>
-<meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta charset="UTF-8">
+    <title>Katharina – Arbeitszeiten</title>
+    <style>
+        body { font-family: Arial; margin: 40px; }
+        input { display: block; margin: 10px 0; padding: 8px; width: 200px; }
+        button { padding: 10px 20px; margin-top: 10px; }
+    </style>
+</head>
+<body>
 
-<style>
-body {
-    font-family: Arial, sans-serif;
-    margin: 20px;
-}
-input {
-    padding: 10px;
-    font-size: 18px;
-    width: 200px;
-}
-button {
-    padding: 12px;
-    font-size: 18px;
-    margin-top: 10px;
-    width: 220px;
-}
-</style>
+<h2>Katharina – Arbeitszeiten</h2>
+
+<button onclick="login()">Einmalig einloggen (nur Robert)</button>
+
+<h3>Zeiten eintragen</h3>
+
+<label>Datum</label>
+<input id="datum" type="date">
+
+<label>Start</label>
+<input id="start" type="time">
+
+<label>Ende</label>
+<input id="ende" type="time">
+
+<button onclick="saveTimes()">Speichern</button>
 
 <script>
-// --------------------------------------------------
-// KONFIGURATION (DEINE WERTE)
-// --------------------------------------------------
+/* ================================
+   KONFIGURATION
+================================ */
 const CLIENT_ID = "3b4ebf1f-8107-477c-9368-fb76ba2169c7";
 const TENANT_ID = "e19f9f5c-569f-487f-8ca5-5fc648224536";
 const FILE_ID = "c/6132f13d2296c3cc/IQAHuJPsDiFrQZFsMI0nKw2SAasC5KlZt7DfdNQ2FZlC_rY";
+const REDIRECT_URI = "https://rowbeat.github.io/arbeitszeiten/";
 
-// Startzeilen pro Monat (bitte anpassen falls nötig)
-const monthStartRow = {
-    1: 14, 2: 45, 3: 73,
-    4: 14, 5: 45, 6: 73,
-    7: 14, 8: 45, 9: 73,
-    10: 14, 11: 45, 12: 73
-};
-
-// --------------------------------------------------
-// QUARTAL ERMITTELN
-// --------------------------------------------------
-function getQuarter(month) {
-    if (month <= 3) return "Quartal 1";
-    if (month <= 6) return "Quartal 2";
-    if (month <= 9) return "Quartal 3";
-    return "Quartal 4";
-}
-
-// --------------------------------------------------
-// AUTOMATISCHE ZELLENLOGIK
-// --------------------------------------------------
-function getExcelCell(date, type) {
-    const d = new Date(date);
-    const day = d.getDate();
-    const month = d.getMonth() + 1;
-
-    const quarter = getQuarter(month);
-    const startRow = monthStartRow[month];
-    const row = startRow + (day - 1);
-
-    const col = type === "start" ? "D" : "G";
-
-    return { quarter, cell: `${col}${row}` };
-}
-
-// --------------------------------------------------
-// LOGIN FLOW
-// --------------------------------------------------
+/* ================================
+   LOGIN
+================================ */
 async function login() {
-    const redirectUri = window.location.href;
-
     const authUrl =
         `https://login.microsoftonline.com/${TENANT_ID}/oauth2/v2.0/authorize` +
         `?client_id=${CLIENT_ID}` +
         `&response_type=code` +
-        `&redirect_uri=${encodeURIComponent(redirectUri)}` +
+        `&redirect_uri=${encodeURIComponent(REDIRECT_URI)}` +
         `&response_mode=query` +
         `&scope=offline_access%20Files.ReadWrite%20Files.ReadWrite.All%20User.Read`;
 
     window.location = authUrl;
 }
 
+/* ================================
+   CODE → TOKEN
+================================ */
 async function exchangeCodeForToken(code) {
-    const redirectUri = window.location.href;
+    const response = await fetch(
+        `https://login.microsoftonline.com/${TENANT_ID}/oauth2/v2.0/token`,
+        {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: new URLSearchParams({
+                client_id: CLIENT_ID,
+                scope: "offline_access Files.ReadWrite Files.ReadWrite.All User.Read",
+                code: code,
+                redirect_uri: REDIRECT_URI,
+                grant_type: "authorization_code"
+            })
+        }
+    );
 
-    const body =
-        `client_id=${CLIENT_ID}` +
-        `&grant_type=authorization_code` +
-        `&code=${code}` +
-        `&redirect_uri=${encodeURIComponent(redirectUri)}`;
+    const data = await response.json();
+    console.log("Token Response:", data);
+
+    if (data.refresh_token) {
+        localStorage.setItem("refresh_token", data.refresh_token);
+        alert("Login erfolgreich gespeichert!");
+    } else {
+        alert("Fehler beim Login – Details in der Konsole.");
+        console.error(data);
+    }
+}
+
+/* ================================
+   REFRESH TOKEN → ACCESS TOKEN
+================================ */
+async function getAccessToken() {
+    const refreshToken = localStorage.getItem("refresh_token");
+    if (!refreshToken) return null;
 
     const response = await fetch(
         `https://login.microsoftonline.com/${TENANT_ID}/oauth2/v2.0/token`,
         {
             method: "POST",
             headers: { "Content-Type": "application/x-www-form-urlencoded" },
-            body
+            body: new URLSearchParams({
+                client_id: CLIENT_ID,
+                scope: "offline_access Files.ReadWrite Files.ReadWrite.All User.Read",
+                refresh_token: refreshToken,
+                grant_type: "refresh_token"
+            })
         }
     );
 
     const data = await response.json();
-    localStorage.setItem("refresh_token", data.refresh_token);
-    alert("Login erfolgreich! Du kannst jetzt Zeiten eintragen.");
+    console.log("Access Token Response:", data);
+
+    return data.access_token || null;
 }
 
-async function getAccessToken() {
-    const refresh = localStorage.getItem("refresh_token");
-    if (!refresh) {
-        alert("Bitte zuerst einloggen!");
-        return null;
+/* ================================
+   SPEICHERN IN EXCEL
+================================ */
+async function saveTimes() {
+    const accessToken = await getAccessToken();
+    if (!accessToken) {
+        alert("Bitte zuerst einloggen.");
+        return;
     }
 
-    const body =
-        `client_id=${CLIENT_ID}` +
-        `&grant_type=refresh_token` +
-        `&refresh_token=${refresh}`;
+    const datum = document.getElementById("datum").value;
+    const start = document.getElementById("start").value;
+    const ende = document.getElementById("ende").value;
+
+    if (!datum || !start || !ende) {
+        alert("Bitte alle Felder ausfüllen.");
+        return;
+    }
+
+    const body = {
+        values: [[datum, start, ende]]
+    };
 
     const response = await fetch(
-        `https://login.microsoftonline.com/${TENANT_ID}/oauth2/v2.0/token`,
+        `https://graph.microsoft.com/v1.0/me/drive/items/${FILE_ID}/workbook/worksheets('Tabelle1')/tables('Tabelle1')/rows/add`,
         {
             method: "POST",
-            headers: { "Content-Type": "application/x-www-form-urlencoded" },
-            body
+            headers: {
+                "Authorization": `Bearer ${accessToken}`,
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify(body)
         }
     );
 
-    const data = await response.json();
-    return data.access_token;
+    const result = await response.json();
+    console.log("Excel Response:", result);
+
+    if (result.index !== undefined) {
+        alert("Zeiten erfolgreich gespeichert!");
+    } else {
+        alert("Fehler beim Speichern – Details in der Konsole.");
+    }
 }
 
-// --------------------------------------------------
-// IN EXCEL SCHREIBEN
-// --------------------------------------------------
-async function writeToExcel(date, start, end) {
-    const token = await getAccessToken();
-    if (!token) return;
-
-    const startCell = getExcelCell(date, "start");
-    const endCell = getExcelCell(date, "end");
-
-    const urlStart =
-        `https://graph.microsoft.com/v1.0/me/drive/items/${FILE_ID}/workbook/worksheets('${startCell.quarter}')/range(address='${startCell.cell}')`;
-
-    const urlEnd =
-        `https://graph.microsoft.com/v1.0/me/drive/items/${FILE_ID}/workbook/worksheets('${endCell.quarter}')/range(address='${endCell.cell}')`;
-
-    await fetch(urlStart, {
-        method: "PATCH",
-        headers: {
-            "Authorization": `Bearer ${token}`,
-            "Content-Type": "application/json"
-        },
-        body: JSON.stringify({ values: [[start]] })
-    });
-
-    await fetch(urlEnd, {
-        method: "PATCH",
-        headers: {
-            "Authorization": `Bearer ${token}`,
-            "Content-Type": "application/json"
-        },
-        body: JSON.stringify({ values: [[end]] })
-    });
-
-    alert("Zeiten erfolgreich gespeichert!");
-}
-
-// --------------------------------------------------
-// URL CODE HANDLING
-// --------------------------------------------------
+/* ================================
+   BEIM LADEN: CODE ERKENNEN
+================================ */
 window.onload = () => {
     const params = new URLSearchParams(window.location.search);
     const code = params.get("code");
@@ -180,25 +167,6 @@ window.onload = () => {
     }
 };
 </script>
-</head>
-
-<body>
-
-<h2>Katharina – Arbeitszeiten</h2>
-
-<button onclick="login()">Einmalig einloggen (nur Robert)</button>
-
-<h3>Zeiten eintragen</h3>
-
-Datum: <input id="date" type="date"><br><br>
-Start: <input id="start" type="time"><br><br>
-Ende: <input id="end" type="time"><br><br>
-
-<button onclick="writeToExcel(
-    document.getElementById('date').value,
-    document.getElementById('start').value,
-    document.getElementById('end').value
-)">Speichern</button>
 
 </body>
 </html>
