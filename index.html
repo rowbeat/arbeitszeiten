@@ -2,171 +2,54 @@
 <html lang="de">
 <head>
     <meta charset="UTF-8">
-    <title>Katharina – Arbeitszeiten</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Arbeitszeiten Vucinic</title>
+
     <style>
-        body { font-family: Arial; margin: 40px; }
-        input { display: block; margin: 10px 0; padding: 8px; width: 200px; }
-        button { padding: 10px 20px; margin-top: 10px; }
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        .container {
+            max-width: 400px;
+            margin: auto;
+        }
+        button {
+            width: 100%;
+            padding: 12px;
+            margin-top: 10px;
+            font-size: 16px;
+        }
+        input {
+            width: 100%;
+            padding: 10px;
+            margin-top: 8px;
+            font-size: 16px;
+        }
     </style>
 </head>
+
 <body>
+    <div class="container">
+        <h2>Arbeitszeiten erfassen</h2>
 
-<h2>Katharina – Arbeitszeiten</h2>
+        <!-- LOGIN BUTTON -->
+        <button onclick="login()">Einmalig einloggen</button>
 
-<button onclick="login()">Einmalig einloggen (nur Robert)</button>
+        <h3>Zeiten eingeben</h3>
 
-<h3>Zeiten eintragen</h3>
+        <label>Datum:</label>
+        <input type="date" id="date">
 
-<label>Datum</label>
-<input id="datum" type="date">
+        <label>Startzeit:</label>
+        <input type="time" id="start">
 
-<label>Start</label>
-<input id="start" type="time">
+        <label>Endzeit:</label>
+        <input type="time" id="end">
 
-<label>Ende</label>
-<input id="ende" type="time">
+        <button onclick="saveToExcel()">Speichern</button>
+    </div>
 
-<button onclick="saveTimes()">Speichern</button>
-
-<script>
-/* ================================
-   KONFIGURATION
-================================ */
-const CLIENT_ID = "3b4ebf1f-8107-477c-9368-fb76ba2169c7";
-const TENANT_ID = "e19f9f5c-569f-487f-8ca5-5fc648224536";
-const FILE_ID = "c/6132f13d2296c3cc/IQAHuJPsDiFrQZFsMI0nKw2SAasC5KlZt7DfdNQ2FZlC_rY";
-const REDIRECT_URI = "https://rowbeat.github.io/arbeitszeiten/";
-
-/* ================================
-   LOGIN
-================================ */
-async function login() {
-    const authUrl =
-        `https://login.microsoftonline.com/${TENANT_ID}/oauth2/v2.0/authorize` +
-        `?client_id=${CLIENT_ID}` +
-        `&response_type=code` +
-        `&redirect_uri=${encodeURIComponent(REDIRECT_URI)}` +
-        `&response_mode=query` +
-        `&scope=offline_access%20Files.ReadWrite%20Files.ReadWrite.All%20User.Read`;
-
-    window.location = authUrl;
-}
-
-/* ================================
-   CODE → TOKEN
-================================ */
-async function exchangeCodeForToken(code) {
-    const response = await fetch(
-        `https://login.microsoftonline.com/${TENANT_ID}/oauth2/v2.0/token`,
-        {
-            method: "POST",
-            headers: { "Content-Type": "application/x-www-form-urlencoded" },
-            body: new URLSearchParams({
-                client_id: CLIENT_ID,
-                scope: "offline_access Files.ReadWrite Files.ReadWrite.All User.Read",
-                code: code,
-                redirect_uri: REDIRECT_URI,
-                grant_type: "authorization_code"
-            })
-        }
-    );
-
-    const data = await response.json();
-    console.log("Token Response:", data);
-
-    if (data.refresh_token) {
-        localStorage.setItem("refresh_token", data.refresh_token);
-        alert("Login erfolgreich gespeichert!");
-    } else {
-        alert("Fehler beim Login – Details in der Konsole.");
-        console.error(data);
-    }
-}
-
-/* ================================
-   REFRESH TOKEN → ACCESS TOKEN
-================================ */
-async function getAccessToken() {
-    const refreshToken = localStorage.getItem("refresh_token");
-    if (!refreshToken) return null;
-
-    const response = await fetch(
-        `https://login.microsoftonline.com/${TENANT_ID}/oauth2/v2.0/token`,
-        {
-            method: "POST",
-            headers: { "Content-Type": "application/x-www-form-urlencoded" },
-            body: new URLSearchParams({
-                client_id: CLIENT_ID,
-                scope: "offline_access Files.ReadWrite Files.ReadWrite.All User.Read",
-                refresh_token: refreshToken,
-                grant_type: "refresh_token"
-            })
-        }
-    );
-
-    const data = await response.json();
-    console.log("Access Token Response:", data);
-
-    return data.access_token || null;
-}
-
-/* ================================
-   SPEICHERN IN EXCEL
-================================ */
-async function saveTimes() {
-    const accessToken = await getAccessToken();
-    if (!accessToken) {
-        alert("Bitte zuerst einloggen.");
-        return;
-    }
-
-    const datum = document.getElementById("datum").value;
-    const start = document.getElementById("start").value;
-    const ende = document.getElementById("ende").value;
-
-    if (!datum || !start || !ende) {
-        alert("Bitte alle Felder ausfüllen.");
-        return;
-    }
-
-    const body = {
-        values: [[datum, start, ende]]
-    };
-
-    const response = await fetch(
-        `https://graph.microsoft.com/v1.0/me/drive/items/${FILE_ID}/workbook/worksheets('Tabelle1')/tables('Tabelle1')/rows/add`,
-        {
-            method: "POST",
-            headers: {
-                "Authorization": `Bearer ${accessToken}`,
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify(body)
-        }
-    );
-
-    const result = await response.json();
-    console.log("Excel Response:", result);
-
-    if (result.index !== undefined) {
-        alert("Zeiten erfolgreich gespeichert!");
-    } else {
-        alert("Fehler beim Speichern – Details in der Konsole.");
-    }
-}
-
-/* ================================
-   BEIM LADEN: CODE ERKENNEN
-================================ */
-window.onload = () => {
-    const params = new URLSearchParams(window.location.search);
-    const code = params.get("code");
-
-    if (code && code.length > 10) {
-        exchangeCodeForToken(code);
-    }
-};
-</script>
-
+    <script src="script.js"></script>
 </body>
 </html>
