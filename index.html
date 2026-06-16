@@ -173,8 +173,11 @@ async function writeToExcel(date, start, end) {
 // --------------------------------------------------
 window.onload = () => {
     const params = new URLSearchParams(window.location.search);
-    if (params.has("code")) {
-        exchangeCodeForToken(params.get("code"));
+    const code = params.get("code");
+if (code && code.length > 10) {
+    exchangeCodeForToken(code);
+}
+
     }
 };
 </script>
