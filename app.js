@@ -109,7 +109,7 @@ async function saveToExcel() {
     // WICHTIG: Leerzeichen im Dateinamen müssen kodiert werden (%20)
     const filePath = "Katharina%20Arbeitszeiten_Vucinic.xlsx";
 
-    await fetch(`https://graph.microsoft.com/v1.0/me/drive/root:/${filePath}:/workbook/worksheets('Tabelle1')/tables('Tabelle1')/rows`, {
+    await fetch("https://graph.microsoft.com/v1.0/me/drive/special/documents:/Arbeitszeit%20Katharina/Katharina%20Arbeitszeiten_Vucinic.xlsx:/workbook/worksheets('Tabelle1')/tables('Tabelle1')/rows", {
         method: "POST",
         headers: {
             "Authorization": "Bearer " + accessToken,
