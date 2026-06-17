@@ -106,7 +106,10 @@ async function saveToExcel() {
     const start = document.getElementById("start").value;
     const end = document.getElementById("end").value;
 
-    await fetch("https://graph.microsoft.com/v1.0/me/drive/root:/Katharina%20Arbeitszeiten_Vucinic.xlsx:/workbook/worksheets('Tabelle1')/tables('Tabelle1')/rows", {
+    // WICHTIG: Leerzeichen im Dateinamen müssen kodiert werden (%20)
+    const filePath = "Katharina%20Arbeitszeiten_Vucinic.xlsx";
+
+    await fetch(`https://graph.microsoft.com/v1.0/me/drive/root:/${filePath}:/workbook/worksheets('Tabelle1')/tables('Tabelle1')/rows`, {
         method: "POST",
         headers: {
             "Authorization": "Bearer " + accessToken,
@@ -117,4 +120,3 @@ async function saveToExcel() {
 
     alert("Gespeichert!");
 }
-
